@@ -1,0 +1,50 @@
+# Git directory
+.git/
+.gitignore
+
+# Compiled object files
+*.o
+*.lo
+*.la
+.deps/
+.libs/
+
+# Build artifacts  
+autom4te.cache/
+config.log
+config.status
+config.cache
+stamp-h1
+Makefile
+Makefile.in
+configure
+aclocal.m4
+compile
+install-sh
+config.guess
+config.sub
+depcomp
+missing
+default_commit_hash
+
+# Temporary directories
+tmp/
+todo/
+
+# Documentation files (not needed in Docker image)
+*.md
+COPYING
+AUTHORS
+ChangeLog
+INSTALL
+
+# macOS specific
+.DS_Store
+
+# Build executables and test files
+src/s3fs
+test/cr_filename
+test/junk_data
+test/mknod_test
+test/truncate_read_file
+test/write_multiblock 
