@@ -136,32 +136,56 @@ int HttpNotifier::send_notification(const FileOperationEvent& event)
     
     // Retry logic
     int result = -1;
+    std::string last_error_detail;
+    std::chrono::steady_clock::time_point start_time;
     for (int attempt = 0; attempt <= config.max_retries; ++attempt) {
+        start_time = std::chrono::steady_clock::now();
+        
         CURLcode res = curl_easy_perform(curl);
+        
+        // Calculate response time
+        auto end_time = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        long response_time_ms = duration.count();
+        
         if (res == CURLE_OK) {
             long response_code;
             curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+
             if (response_code >= 200 && response_code < 300) {
-                S3FS_PRN_DBG("Notification sent successfully: %s %s", 
-                           event.operation.c_str(), event.file_path.c_str());
+                S3FS_PRN_DBG("Notification sent successfully: %s %s (attempt %d, %ldms)", 
+                           event.operation.c_str(), event.file_path.c_str(),
+                           attempt + 1, response_time_ms);
                 result = 0;
                 break;
             } else {
-                S3FS_PRN_WARN("HTTP notification failed with response code: %ld", response_code);
+                // Log HTTP status code error
+                last_error_detail = "HTTP " + std::to_string(response_code);
+                S3FS_PRN_ERR("HTTP notification failed (attempt %d/%d): HTTP %ld - URL: %s, Operation: %s %s, Response time: %ldms", 
+                            attempt + 1, config.max_retries + 1,
+                            response_code,
+                            config.webhook_url.c_str(),
+                            event.operation.c_str(), event.file_path.c_str(),
+                            response_time_ms);
             }
         } else {
-            S3FS_PRN_WARN("CURL error during notification (attempt %d): %s", 
-                         attempt + 1, curl_easy_strerror(res));
-        }
-        
-        if (attempt < config.max_retries) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(config.retry_delay_ms));
+            // Log CURL error
+            last_error_detail = std::string("CURL ") + curl_easy_strerror(res) + " [" + std::to_string(res) + "]";
+            S3FS_PRN_ERR("HTTP notification CURL error (attempt %d/%d): %s [%d] - URL: %s, Operation: %s %s, Timeout: %dms", 
+                        attempt + 1, config.max_retries + 1, 
+                        curl_easy_strerror(res), res,
+                        config.webhook_url.c_str(), 
+                        event.operation.c_str(), event.file_path.c_str(),
+                        config.timeout_ms);
         }
     }
     
     if (result != 0) {
-        S3FS_PRN_ERR("Failed to send notification after %d attempts: %s %s",
-                    config.max_retries + 1, event.operation.c_str(), event.file_path.c_str());
+        S3FS_PRN_ERR("HTTP notification completely failed after %d attempts: %s %s - Last error: %s, Target URL: %s", 
+                    config.max_retries + 1,
+                    event.operation.c_str(), event.file_path.c_str(),
+                    last_error_detail.c_str(), 
+                    config.webhook_url.c_str());
     }
     
     // Clean up resources
