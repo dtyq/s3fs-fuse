@@ -58,6 +58,7 @@
 #include "s3fs_threadreqs.h"
 #include "mpu_util.h"
 #include "threadpoolman.h"
+#include "extension/http_notifier.h"
 
 //-------------------------------------------------------------------
 // Symbols
@@ -82,7 +83,7 @@ static gid_t mp_gid               = 0;    // group of mount point(only not speci
 static mode_t mp_mode             = 0;    // mode of mount point
 static mode_t mp_umask            = 0;    // umask for mount point
 static bool is_mp_umask           = false;// default does not set.
-static std::string mountpoint;
+std::string mountpoint;
 static std::unique_ptr<S3fsCred> ps3fscred; // using only in this file
 static std::string mimetype_file;
 static bool nocopyapi             = false;
@@ -109,6 +110,11 @@ static off_t fake_diskfree_size   = -1; // default is not set(-1)
 static bool update_parent_dir_stat= false;  // default not updating parent directory stats
 static fsblkcnt_t bucket_block_count;                       // advertised block count of the bucket
 static unsigned long s3fs_block_size = 16 * 1024 * 1024;    // s3fs block size is 16MB
+
+// HTTP notification configuration variables
+static std::string http_notify_url;        // HTTP notification URL
+static int http_notify_timeout    = 5000;  // Notification timeout (milliseconds)
+static bool is_http_notify        = false; // Whether to enable HTTP notifications
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -1118,6 +1124,11 @@ static int s3fs_create(const char* _path, mode_t mode, struct fuse_file_info* fi
     ent->MarkDirtyNewFile();
     fi->fh = autoent.Detach();       // KEEP fdentity open;
 
+    // Send file creation notification
+    if(is_http_notify){
+        notify_file_operation_async(path, "CREATE", 0);
+    }
+
     S3FS_MALLOCTRIM(0);
 
     return 0;
@@ -1200,6 +1211,11 @@ static int s3fs_mkdir(const char* _path, mode_t mode)
         S3FS_PRN_ERR("succeed to create the directory(%s), but could not update timestamp of its parent directory(result=%d).", path, update_result);
     }
 
+    // Send directory creation notification
+    if(0 == result && is_http_notify){
+        notify_file_operation_async(path, "CREATE", 0);
+    }
+
     S3FS_MALLOCTRIM(0);
 
     return result;
@@ -1228,6 +1244,11 @@ static int s3fs_unlink(const char* _path)
     int update_result;
     if(0 != (update_result = update_mctime_parent_directory(path))){
         S3FS_PRN_ERR("succeed to remove the file(%s), but could not update timestamp of its parent directory(result=%d).", path, update_result);
+    }
+
+    // Send file deletion notification
+    if(0 == result && is_http_notify){
+        notify_file_operation_async(path, "DELETE", 0);
     }
 
     S3FS_MALLOCTRIM(0);
@@ -1311,6 +1332,11 @@ static int s3fs_rmdir(const char* _path)
     int update_result;
     if(0 != (update_result = update_mctime_parent_directory(path))){
         S3FS_PRN_ERR("succeed to remove the directory(%s), but could not update timestamp of its parent directory(result=%d).", path, update_result);
+    }
+
+    // Send directory deletion notification
+    if(0 == result && is_http_notify){
+        notify_file_operation_async(path, "DELETE", 0);
     }
 
     S3FS_MALLOCTRIM(0);
@@ -2980,6 +3006,16 @@ static int s3fs_flush(const char* _path, struct fuse_file_info* fi)
             if(0 != (update_result = update_mctime_parent_directory(path))){
                 S3FS_PRN_ERR("succeed to create the file(%s), but could not update timestamp of its parent directory(result=%d).", path, update_result);
             }
+        }else{
+            // Send file update notification (only for existing files)
+            if(0 == result && is_http_notify){
+                struct stat stbuf;
+                size_t file_size = 0;
+                if(0 == get_object_attribute(path, &stbuf)){
+                    file_size = stbuf.st_size;
+                }
+                notify_file_operation_async(path, "UPDATE", file_size);
+            }
         }
     }
     S3FS_MALLOCTRIM(0);
@@ -4158,12 +4194,27 @@ static void* s3fs_init(struct fuse_conn_info* conn)
         S3FS_PRN_ERR("Failed to initialize signal object, but continue...");
     }
 
+    // Initialize HTTP notifications
+    if(is_http_notify){
+        if(!init_http_notifications(http_notify_url.c_str(), http_notify_timeout)){
+            S3FS_PRN_ERR("Failed to initialize HTTP notifications, but continue...");
+        }else{
+            S3FS_PRN_INFO("HTTP notifications initialized: %s", http_notify_url.c_str());
+        }
+    }
+
     return nullptr;
 }
 
 static void s3fs_destroy(void*)
 {
     S3FS_PRN_INFO("destroy");
+
+    // Clean up HTTP notifications
+    if(is_http_notify){
+        cleanup_http_notifications();
+        S3FS_PRN_INFO("HTTP notifications cleaned up");
+    }
 
     // Signal object
     if(!S3fsSignals::Destroy()){
@@ -5389,6 +5440,24 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
         }
         else if(0 == strcmp(arg, "requester_pays")){
             S3fsCurl::SetRequesterPays(true);
+            return 0;
+        }
+        // HTTP notification related options
+        else if(is_prefix(arg, "http_notify_url=")){
+            http_notify_url = strchr(arg, '=') + sizeof(char);
+            if(http_notify_url.empty()){
+                S3FS_PRN_EXIT("option http_notify_url has empty value.");
+                return -1;
+            }
+            is_http_notify = true;
+            return 0;
+        }
+        else if(is_prefix(arg, "http_notify_timeout=")){
+            http_notify_timeout = cvt_strtoofft(strchr(arg, '=') + sizeof(char), /*base=*/ 10);
+            if(http_notify_timeout <= 0){
+                S3FS_PRN_EXIT("option http_notify_timeout must be greater than 0.");
+                return -1;
+            }
             return 0;
         }
         // [NOTE]

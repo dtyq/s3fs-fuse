@@ -102,6 +102,9 @@ fuse.pc
 WinFsp/
 bin/
 
+# debug
+debug/
+
 #
 # Local variables:
 # tab-width: 4

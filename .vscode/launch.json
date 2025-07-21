@@ -1,0 +1,101 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(lldb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/Users/codinghuang/codeDir/cCode/php-8.0/install/bin/php",
+            "args": [
+                "/Users/codinghuang/codeDir/kkguan/keewood-service/bin/hyperf.php",
+                "start"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+        },
+        {
+            "name": "(gdb) master",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/root/.phpbrew/php/php-8.0.1/bin/php",
+            "args": [
+                "${workspaceFolder}/test.php"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+        },
+        {
+            "name": "Attach manager (gdb)",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "php",
+            "processId": "14505",
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(gdb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "php",
+            "args": [
+                "${file}"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "调试子进程",
+                    "text": "-gdb-set follow-fork-mode child",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "launch script",
+            "type": "php",
+            "request": "launch",
+            "program": "${workspaceFolder}/debug/xdebug/test.php",
+            "cwd": "${workspaceFolder}",
+            "port": 0,
+            "runtimeArgs": [
+                "-dzend_extension=xdebug",
+                "-dxdebug.start_with_request=yes"
+            ],
+            "env": {
+                "XDEBUG_MODE": "debug,develop",
+                "XDEBUG_CONFIG": "client_port=${port}"
+            }
+        },
+    ]
+}
