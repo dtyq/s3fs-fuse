@@ -1,6 +1,6 @@
 # Multi-stage build for s3fs-fuse
 # Stage 1: Build environment
-FROM ubuntu:24.04 AS builder
+FROM public.ecr.aws/ubuntu/ubuntu:24.04 AS builder
 
 # Set labels for maintainer info
 LABEL maintainer="s3fs-fuse-builder" \
@@ -41,7 +41,7 @@ RUN chmod +x ./autogen.sh && \
     make install DESTDIR=/install
 
 # Stage 2: Runtime environment
-FROM ubuntu:24.04 AS runtime
+FROM public.ecr.aws/ubuntu/ubuntu:24.04 AS runtime
 
 # Set labels
 LABEL maintainer="s3fs-fuse-runtime" \
