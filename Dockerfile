@@ -1,11 +1,11 @@
 # Multi-stage build for s3fs-fuse
 # Stage 1: Build environment
-FROM --platform=linux/amd64 public.ecr.aws/ubuntu/ubuntu:20.04 AS builder
+FROM ubuntu:24.04 AS builder
 
-# Set labels
-LABEL maintainer="s3fs-fuse-builder"
-LABEL description="s3fs-fuse compilation environment"
-LABEL version="1.0"
+# Set labels for maintainer info
+LABEL maintainer="s3fs-fuse-builder" \
+      description="s3fs-fuse compilation environment" \
+      version="2.0"
 
 # Set non-interactive environment to avoid apt prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,62 +13,56 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Set working directory
 WORKDIR /usr/src/s3fs-fuse
 
-# Configure Alibaba Cloud mirror for faster package downloads in China
-# RUN sed -i 's@//.*archive.ubuntu.com@//mirrors.aliyun.com@g' /etc/apt/sources.list && \
-#     sed -i 's@//.*security.ubuntu.com@//mirrors.aliyun.com@g' /etc/apt/sources.list
-
-# Update package index and install build dependencies
-RUN apt-get update && apt-get install -y \
+# Install build dependencies in single layer for efficiency
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     automake \
     autotools-dev \
     libtool \
     autoconf \
-    autogen \
     git \
     pkg-config \
     libfuse-dev \
     libcurl4-openssl-dev \
     libssl-dev \
     libxml2-dev \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copy source code to working directory
+# Copy source code
 COPY . .
 
-# Ensure autogen.sh is executable and run it to generate configure script
-RUN chmod +x ./autogen.sh && ./autogen.sh
-
-# Configure build with OpenSSL support
-RUN ./configure --prefix=/usr --with-openssl
-
-# Compile project with parallel processing
-RUN make -j$(nproc)
-
-# Install to system path
-RUN make install
+# Generate configure script, configure, compile and install
+RUN chmod +x ./autogen.sh && \
+    ./autogen.sh && \
+    ./configure --prefix=/usr --with-openssl && \
+    make -j$(nproc) && \
+    make install DESTDIR=/install
 
 # Stage 2: Runtime environment
-FROM --platform=linux/amd64 open-registry-cn-beijing.cr.volces.com/vke/tos-launcher:v0.2.0
+FROM ubuntu:24.04 AS runtime
 
 # Set labels
-LABEL maintainer="s3fs-fuse-runtime"
-LABEL description="s3fs-fuse - FUSE-based file system backed by Amazon S3"
-LABEL version="1.0"
+LABEL maintainer="s3fs-fuse-runtime" \
+      description="s3fs-fuse - FUSE-based file system backed by Amazon S3" \
+      version="2.0"
 
-# Install runtime dependencies for s3fs
-RUN apt-get update && apt-get install -y \
+# Set non-interactive environment
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libfuse2 \
     libcurl4 \
-    libssl1.1 \
+    libssl3 \
     libxml2 \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Backup existing s3fs if it exists, then copy new s3fs from builder stage
-RUN if [ -f /usr/bin/s3fs ]; then \
-        cp /usr/bin/s3fs /usr/bin/s3fs.backup.$(date +%Y%m%d_%H%M%S); \
-        echo "Existing s3fs backed up to /usr/bin/s3fs.backup.$(date +%Y%m%d_%H%M%S)"; \
-    fi
+# Copy s3fs binary from builder stage
+COPY --from=builder /install/usr/bin/s3fs /usr/bin/s3fs
 
-# Copy executable from builder stage
-COPY --from=builder /usr/bin/s3fs /usr/bin/s3fs
+# Set proper permissions
+RUN chmod +x /usr/bin/s3fs

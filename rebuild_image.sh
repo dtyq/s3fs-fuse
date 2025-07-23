@@ -3,7 +3,7 @@
 set -e
 
 # 默认值
-IMAGE_NAME="tos-launcher"
+IMAGE_NAME="s3fs-fuse"
 IMAGE_TAG="latest"
 BUILD_FLAGS=""
 
