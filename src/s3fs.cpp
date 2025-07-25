@@ -1126,7 +1126,7 @@ static int s3fs_create(const char* _path, mode_t mode, struct fuse_file_info* fi
 
     // Send file creation notification
     if(is_http_notify){
-        int notify_result = notify_file_operation_sync(path, "CREATE", 0);
+        int notify_result = notify_file_operation_async(path, "CREATE", 0);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send file creation notification for %s, but file operation succeeded", path);
         }
@@ -1216,7 +1216,7 @@ static int s3fs_mkdir(const char* _path, mode_t mode)
 
     // Send directory creation notification
     if(0 == result && is_http_notify){
-        int notify_result = notify_file_operation_sync(path, "CREATE", 0);
+        int notify_result = notify_file_operation_async(path, "CREATE", 0);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send directory creation notification for %s, but file operation succeeded", path);
         }
@@ -1254,7 +1254,7 @@ static int s3fs_unlink(const char* _path)
 
     // Send file deletion notification
     if(0 == result && is_http_notify){
-        int notify_result = notify_file_operation_sync(path, "DELETE", 0);
+        int notify_result = notify_file_operation_async(path, "DELETE", 0);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send file deletion notification for %s, but file operation succeeded", path);
         }
@@ -1345,7 +1345,7 @@ static int s3fs_rmdir(const char* _path)
 
     // Send directory deletion notification
     if(0 == result && is_http_notify){
-        int notify_result = notify_file_operation_sync(path, "DELETE", 0);
+        int notify_result = notify_file_operation_async(path, "DELETE", 0);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send directory deletion notification for %s, but file operation succeeded", path);
         }
@@ -3026,7 +3026,7 @@ static int s3fs_flush(const char* _path, struct fuse_file_info* fi)
                 if(0 == get_object_attribute(path, &stbuf)){
                     file_size = stbuf.st_size;
                 }
-                int notify_result = notify_file_operation_sync(path, "UPDATE", file_size);
+                int notify_result = notify_file_operation_async(path, "UPDATE", file_size);
                 if(notify_result != 0){
                     S3FS_PRN_WARN("Failed to send file update notification for %s, but file operation succeeded", path);
                 }

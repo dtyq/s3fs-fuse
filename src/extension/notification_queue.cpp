@@ -4,26 +4,31 @@
 #include <iomanip>
 #include <sstream>
 
-FileOperationEvent::FileOperationEvent(const char* path, const char* op, size_t size, const char* mount)
-    : file_path(path ? path : ""), operation(op ? op : ""), file_size(size), mount_point(mount ? mount : "")
+FileOperationEvent::FileOperationEvent(const char* path, const char* op, size_t size)
+    : operation(op ? op : ""), file_size(size)
 {
-    // Generate ISO 8601 timestamp
+    // Remove leading slash from file_path to make it relative to mount point
+    if (path && path[0] == '/' && path[1] != '\0') {
+        file_path = path + 1;  // Skip the leading '/'
+    } else if (path) {
+        file_path = path;
+    } else {
+        file_path = "";
+    }
+    
+    // Generate Unix timestamp
     auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    std::stringstream ss;
-    ss << std::put_time(std::gmtime(&time_t), "%Y-%m-%dT%H:%M:%SZ");
-    timestamp = ss.str();
+    timestamp = std::chrono::system_clock::to_time_t(now);
 }
 
 std::string FileOperationEvent::to_json() const
 {
     std::stringstream json;
     json << "{"
-         << "\"timestamp\":\"" << timestamp << "\","
+         << "\"timestamp\":" << timestamp << ","
          << "\"operation\":\"" << operation << "\","
          << "\"file_path\":\"" << file_path << "\","
-         << "\"file_size\":" << file_size << ","
-         << "\"mount_point\":\"" << mount_point << "\""
+         << "\"file_size\":" << file_size
          << "}";
     return json.str();
 }

@@ -200,14 +200,14 @@ void HttpNotifier::worker_loop()
     S3FS_PRN_INFO("HTTP notification worker thread started");
     
     while (initialized.load()) {
-        FileOperationEvent event("", "", 0, "");
+        FileOperationEvent event("", "", 0);
         if (event_queue.dequeue(event, 1000)) {
             send_notification(event);
         }
     }
     
     // Process remaining events
-    FileOperationEvent event("", "", 0, "");
+    FileOperationEvent event("", "", 0);
     while (event_queue.dequeue(event, 0)) {
         send_notification(event);
     }
@@ -228,14 +228,15 @@ bool init_http_notifications(const char* webhook_url, int timeout_ms)
     return HttpNotifier::instance().initialize(config);
 }
 
-void notify_file_operation_async(const char* file_path, const char* operation, size_t file_size)
+int notify_file_operation_async(const char* file_path, const char* operation, size_t file_size)
 {
     if (!file_path || !operation) {
-        return;
+        return -1;
     }
     
-    FileOperationEvent event(file_path, operation, file_size, mountpoint.c_str());
+    FileOperationEvent event(file_path, operation, file_size);
     HttpNotifier::instance().notify_async(event);
+    return 0;
 }
 
 int notify_file_operation_sync(const char* file_path, const char* operation, size_t file_size)
@@ -244,7 +245,7 @@ int notify_file_operation_sync(const char* file_path, const char* operation, siz
         return -1;
     }
     
-    FileOperationEvent event(file_path, operation, file_size, mountpoint.c_str());
+    FileOperationEvent event(file_path, operation, file_size);
     return HttpNotifier::instance().notify_sync(event);
 }
 
