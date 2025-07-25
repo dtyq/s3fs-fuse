@@ -42,6 +42,12 @@ public:
     static HttpNotifier& instance();
 };
 
+namespace FileOperation {
+    constexpr const char* CREATE = "CREATE";
+    constexpr const char* DELETE = "DELETE";
+    constexpr const char* UPDATE = "UPDATE";
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
