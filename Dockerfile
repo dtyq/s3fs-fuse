@@ -9,6 +9,7 @@ LABEL maintainer="s3fs-fuse-builder" \
 
 # Set non-interactive environment to avoid apt prompts
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
 
 # Set working directory
 WORKDIR /usr/src/s3fs-fuse
@@ -27,6 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libxml2-dev \
     ca-certificates \
+    tzdata \
+    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -50,6 +54,7 @@ LABEL maintainer="s3fs-fuse-runtime" \
 
 # Set non-interactive environment
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -58,6 +63,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     libxml2 \
     ca-certificates \
+    tzdata \
+    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
