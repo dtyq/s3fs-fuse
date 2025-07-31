@@ -114,11 +114,33 @@ void HttpNotifier::cleanup_curl_handle(CURL* curl)
 
 int HttpNotifier::send_notification(const FileOperationEvent& event)
 {
+    // Record function start time for total duration calculation
+    auto function_start_time = std::chrono::steady_clock::now();
+    
     CURL* curl = create_curl_handle();
     if (!curl) {
         S3FS_PRN_ERR("Failed to create CURL handle for notification");
+        
+        // Log early failure with duration
+        auto function_end_time = std::chrono::steady_clock::now();
+        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(function_end_time - function_start_time);
+        long total_time_ms = total_duration.count();
+        
+        S3FS_PRN_WARN("HTTP notification request failed: Operation=%s File=%s Duration=%ldms Result=%d", 
+                      event.operation.c_str(), 
+                      event.file_path.c_str(), 
+                      total_time_ms,
+                      -1);
+        
         return -1;
     }
+    
+    // Log HTTP notification request start
+    S3FS_PRN_INFO("HTTP notification request started: Operation=%s File=%s URL=%s Size=%zu", 
+                  event.operation.c_str(), 
+                  event.file_path.c_str(), 
+                  config.webhook_url.c_str(),
+                  event.file_size);
     
     std::string json_data = event.to_json();
     struct curl_slist* headers = nullptr;
@@ -191,6 +213,24 @@ int HttpNotifier::send_notification(const FileOperationEvent& event)
     // Clean up resources
     curl_slist_free_all(headers);
     cleanup_curl_handle(curl);
+    
+    // Calculate total duration and log completion
+    auto function_end_time = std::chrono::steady_clock::now();
+    auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(function_end_time - function_start_time);
+    long total_time_ms = total_duration.count();
+    
+    if (result == 0) {
+        S3FS_PRN_INFO("HTTP notification request completed successfully: Operation=%s File=%s Duration=%ldms", 
+                      event.operation.c_str(), 
+                      event.file_path.c_str(), 
+                      total_time_ms);
+    } else {
+        S3FS_PRN_WARN("HTTP notification request failed: Operation=%s File=%s Duration=%ldms Result=%d", 
+                      event.operation.c_str(), 
+                      event.file_path.c_str(), 
+                      total_time_ms,
+                      result);
+    }
     
     return result;
 }
