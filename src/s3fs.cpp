@@ -2920,6 +2920,21 @@ static int s3fs_write(const char* _path, const char* buf, size_t size, off_t off
         S3FS_PRN_WARN("failed to write file(%s). result=%zd", path, res);
     }
 
+    // Check if we should send update notification immediately after write
+    bool should_notify = (res > 0 && is_http_notify && !ent->IsDirtyNewFile());
+    
+    if(should_notify){
+        struct stat stbuf;
+        size_t file_size = 0;
+        if(0 == get_object_attribute(path, &stbuf)){
+            file_size = stbuf.st_size;
+        }
+        int notify_result = notify_file_operation_async(path, FileOperation::UPDATE, file_size);
+        if(notify_result != 0){
+            S3FS_PRN_WARN("Failed to send file update notification for %s from write, but write succeeded", path);
+        }
+    }
+
     if(max_dirty_data != -1 && ent->BytesModified() >= max_dirty_data){
         int flushres;
         if(0 != (flushres = ent->RowFlush(static_cast<int>(fi->fh), path, true))){
@@ -3017,19 +3032,6 @@ static int s3fs_flush(const char* _path, struct fuse_file_info* fi)
             int update_result;
             if(0 != (update_result = update_mctime_parent_directory(path))){
                 S3FS_PRN_ERR("succeed to create the file(%s), but could not update timestamp of its parent directory(result=%d).", path, update_result);
-            }
-        }else{
-            // Send file update notification (only for existing files)
-            if(0 == result && is_http_notify){
-                struct stat stbuf;
-                size_t file_size = 0;
-                if(0 == get_object_attribute(path, &stbuf)){
-                    file_size = stbuf.st_size;
-                }
-                int notify_result = notify_file_operation_async(path, FileOperation::UPDATE, file_size);
-                if(notify_result != 0){
-                    S3FS_PRN_WARN("Failed to send file update notification for %s, but file operation succeeded", path);
-                }
             }
         }
     }
