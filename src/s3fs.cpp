@@ -1761,6 +1761,15 @@ static int rename_directory(const char* from, const char* to)
                 S3FS_PRN_ERR("clone_directory_object returned an error(%d)", result);
                 return result;
             }
+
+            // Send directory creation notification for renamed subdirectories
+            // Note: Skip notification for the top-level directory as it will be handled in s3fs_rename
+            if(is_http_notify && strfrom != mn_cur->old_path){
+                int notify_result = notify_file_operation_async(mn_cur->new_path.c_str(), FileOperation::CREATE, 0);
+                if(notify_result != 0){
+                    S3FS_PRN_WARN("Failed to send directory creation notification for renamed subdirectory %s, but directory operation succeeded", mn_cur->new_path.c_str());
+                }
+            }
         }
     }
 
@@ -1776,6 +1785,19 @@ static int rename_directory(const char* from, const char* to)
             if(0 != result){
                 S3FS_PRN_ERR("rename_object returned an error(%d)", result);
                 return result;
+            }
+
+            // Send file creation notification for renamed files within directory rename
+            if(0 == result && is_http_notify){
+                struct stat stbuf;
+                size_t file_size = 0;
+                if(0 == get_object_attribute(mn_cur->new_path.c_str(), &stbuf, nullptr)){
+                    file_size = (size_t)stbuf.st_size;
+                }
+                int notify_result = notify_file_operation_async(mn_cur->new_path.c_str(), FileOperation::CREATE, file_size);
+                if(notify_result != 0){
+                    S3FS_PRN_WARN("Failed to send file creation notification for renamed file %s, but file operation succeeded", mn_cur->new_path.c_str());
+                }
             }
         }
     }
@@ -1845,6 +1867,15 @@ static int s3fs_rename(const char* _from, const char* _to)
             result = rename_object(from, to, true);             // update ctime
         }else{
             result = rename_object_nocopy(from, to, true);      // update ctime
+        }
+    }
+
+    // Send file creation notification for rename operation
+    if(0 == result && is_http_notify){
+        size_t file_size = S_ISDIR(buf.st_mode) ? 0 : (size_t)buf.st_size;
+        int notify_result = notify_file_operation_async(to, FileOperation::CREATE, file_size);
+        if(notify_result != 0){
+            S3FS_PRN_WARN("Failed to send file creation notification for renamed file %s, but file operation succeeded", to);
         }
     }
 
