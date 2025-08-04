@@ -2662,17 +2662,39 @@ bool FdEntity::CheckFileSizeLimit(off_t offset, size_t size) const
         return true;
     }
 
-    int64_t new_size = offset + static_cast<int64_t>(size);
-
-    if (offset >= pagelist.Size()) {
+    struct stat st;
+    if (-1 == physical_fd || fstat(physical_fd, &st) != 0) {
         int64_t current_size = static_cast<int64_t>(pagelist.Size());
-        new_size = current_size + static_cast<int64_t>(size);
-    }
+        S3FS_PRN_WARN("Failed to get actual file size, using page size: %lld", 
+                      static_cast<long long>(current_size));
+        
+        int64_t new_size;
+        if (offset >= current_size) {
+            new_size = offset + static_cast<int64_t>(size);
+        } else {
+            new_size = std::max(current_size, offset + static_cast<int64_t>(size));
+        }
 
-    if (new_size > max_size) {
-        S3FS_PRN_WARN("File size limit exceeded: new_size=%lld, max_size=%lld", 
-                      static_cast<long long>(new_size), static_cast<long long>(max_size));
-        return false;
+        if (new_size > max_size) {
+            S3FS_PRN_WARN("File size limit exceeded: new_size=%lld, max_size=%lld", 
+                          static_cast<long long>(new_size), static_cast<long long>(max_size));
+            return false;
+        }
+    } else {
+        int64_t current_size = static_cast<int64_t>(st.st_size);
+        
+        int64_t new_size;
+        if (offset >= current_size) {
+            new_size = offset + static_cast<int64_t>(size);
+        } else {
+            new_size = std::max(current_size, offset + static_cast<int64_t>(size));
+        }
+
+        if (new_size > max_size) {
+            S3FS_PRN_WARN("File size limit exceeded: new_size=%lld, max_size=%lld", 
+                          static_cast<long long>(new_size), static_cast<long long>(max_size));
+            return false;
+        }
     }
 
     return true;
