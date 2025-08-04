@@ -4,8 +4,6 @@
 #include <thread>
 #include <cstring>
 
-extern std::string mountpoint;
-
 NotificationConfig::NotificationConfig()
     : timeout_ms(5000), max_retries(3), retry_delay_ms(1000)
 {

@@ -59,6 +59,11 @@
 #define S3FS_MALLOCTRIM(pad)
 #endif  // S3FS_MALLOC_TRIM
 
+//-------------------------------------------------------------------
+// Global variables declarations
+//-------------------------------------------------------------------
+extern int64_t max_file_size;  // File size limit (-1 means no limit)
+
 #endif // S3FS_S3FS_H_
 
 /*

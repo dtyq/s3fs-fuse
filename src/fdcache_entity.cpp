@@ -2105,6 +2105,14 @@ ssize_t FdEntity::Write(int fd, const char* bytes, off_t start, size_t size)
     }
     const std::lock_guard<std::mutex> data_lock(fdent_data_lock);
 
+    // Check file size limit before writing
+    if (!CheckFileSizeLimit(start, size)) {
+        int64_t max_limit = GetMaxFileSize();
+        S3FS_PRN_ERR("File size limit exceeded for path(%s): offset=%lld, size=%zu, max_limit=%lld", 
+                     path.c_str(), static_cast<long long int>(start), size, static_cast<long long int>(max_limit));
+        return -EFBIG;
+    }
+
     // check file size
     if(pagelist.Size() < start){
         // grow file size
@@ -2644,6 +2652,36 @@ bool FdEntity::ReplaceLastUpdateUntreatedPart(off_t front_start, off_t front_siz
         }
     }
     return true;
+}
+
+bool FdEntity::CheckFileSizeLimit(off_t offset, size_t size) const
+{
+    int64_t max_size = GetMaxFileSize();
+
+    if (max_size <= 0) {
+        return true;
+    }
+
+    int64_t new_size = offset + static_cast<int64_t>(size);
+
+    if (offset >= pagelist.Size()) {
+        int64_t current_size = static_cast<int64_t>(pagelist.Size());
+        new_size = current_size + static_cast<int64_t>(size);
+    }
+
+    if (new_size > max_size) {
+        S3FS_PRN_WARN("File size limit exceeded: new_size=%lld, max_size=%lld", 
+                      static_cast<long long>(new_size), static_cast<long long>(max_size));
+        return false;
+    }
+
+    return true;
+}
+
+int64_t FdEntity::GetMaxFileSize() const
+{
+    
+    return max_file_size;
 }
 
 /*

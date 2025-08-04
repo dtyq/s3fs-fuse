@@ -76,6 +76,11 @@ enum class dirtype : int8_t {
 };
 
 //-------------------------------------------------------------------
+// Global variables
+//-------------------------------------------------------------------
+int64_t max_file_size = -1;  // File size limit (-1 means no limit)
+
+//-------------------------------------------------------------------
 // Static variables
 //-------------------------------------------------------------------
 static uid_t mp_uid               = 0;    // owner of mount point(only not specified uid opt)
@@ -83,7 +88,7 @@ static gid_t mp_gid               = 0;    // group of mount point(only not speci
 static mode_t mp_mode             = 0;    // mode of mount point
 static mode_t mp_umask            = 0;    // umask for mount point
 static bool is_mp_umask           = false;// default does not set.
-std::string mountpoint;
+static std::string mountpoint;
 static std::unique_ptr<S3fsCred> ps3fscred; // using only in this file
 static std::string mimetype_file;
 static bool nocopyapi             = false;
@@ -4895,6 +4900,23 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
         else if(is_prefix(arg, "storage_class=")){
             const char *storage_class = strchr(arg, '=') + sizeof(char);
             S3fsCurl::SetStorageClass(storage_class);
+            return 0;
+        }
+        else if(is_prefix(arg, "max_file_size=")){
+            // Parse max file size argument
+            char* endptr;
+            int64_t size = strtoll(strchr(arg, '=') + sizeof(char), &endptr, 10);
+            if (*endptr != '\0') {
+                S3FS_PRN_EXIT("Invalid max file size: %s", strchr(arg, '=') + sizeof(char));
+                return -1;
+            }
+            if (size < -1) {
+                S3FS_PRN_EXIT("Max file size cannot be less than -1: %s", strchr(arg, '=') + sizeof(char));
+                return -1;
+            }
+            max_file_size = size;
+
+            S3FS_PRN_INFO("Max file size set to %lld bytes", static_cast<long long>(size));
             return 0;
         }
         //

@@ -242,6 +242,9 @@ class FdEntity : public std::enable_shared_from_this<FdEntity>
         bool GetLastUpdateUntreatedPart(off_t& start, off_t& size) const REQUIRES(FdEntity::fdent_lock);
         bool ReplaceLastUpdateUntreatedPart(off_t front_start, off_t front_size, off_t behind_start, off_t behind_size) REQUIRES(FdEntity::fdent_lock);
 
+        bool CheckFileSizeLimit(off_t offset, size_t size) const;
+        int64_t GetMaxFileSize() const;
+
         // Intentionally unimplemented -- for lock checking only.
         std::mutex* GetMutex() RETURN_CAPABILITY(fdent_lock);
 };
