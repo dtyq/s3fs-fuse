@@ -1131,7 +1131,7 @@ static int s3fs_create(const char* _path, mode_t mode, struct fuse_file_info* fi
 
     // Send file creation notification
     if(is_http_notify){
-        int notify_result = notify_file_operation_async(path, FileOperation::CREATE, 0);
+        int notify_result = notify_file_operation_sync(path, FileOperation::CREATE, 0);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send file creation notification for %s, but file operation succeeded", path);
         }

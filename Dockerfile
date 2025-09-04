@@ -64,6 +64,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2 \
     ca-certificates \
     tzdata \
+    tini \
     && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" > /etc/timezone \
     && rm -rf /var/lib/apt/lists/* \
@@ -74,3 +75,6 @@ COPY --from=builder /install/usr/bin/s3fs /usr/bin/s3fs
 
 # Set proper permissions
 RUN chmod +x /usr/bin/s3fs
+
+# Set tini as the init process
+ENTRYPOINT ["/usr/bin/tini", "--"]
