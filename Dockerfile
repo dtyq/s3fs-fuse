@@ -14,6 +14,11 @@ ENV TZ=Asia/Shanghai
 # Set working directory
 WORKDIR /usr/src/s3fs-fuse
 
+# Configure Aliyun Ubuntu mirror for faster package downloads
+RUN sed -i 's@http://.*archive.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i 's@http://.*security.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i 's@http://.*ports.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources
+
 # Install build dependencies in single layer for efficiency
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -55,6 +60,11 @@ LABEL maintainer="s3fs-fuse-runtime" \
 # Set non-interactive environment
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
+
+# Configure Aliyun Ubuntu mirror for faster package downloads
+RUN sed -i 's@http://.*archive.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i 's@http://.*security.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i 's@http://.*ports.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
