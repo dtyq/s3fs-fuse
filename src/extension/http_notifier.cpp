@@ -4,6 +4,24 @@
 #include <thread>
 #include <cstring>
 
+// Check if file path ends with .mount_test suffix
+static bool should_skip_notification(const char* file_path) {
+    if (!file_path || strlen(file_path) == 0) {
+        return false;
+    }
+    
+    const char* mount_test_suffix = ".mount_test";
+    size_t path_len = strlen(file_path);
+    size_t suffix_len = strlen(mount_test_suffix);
+    
+    if (path_len < suffix_len) {
+        return false;
+    }
+    
+    // Check if path ends with .mount_test (case sensitive)
+    return (strcmp(file_path + path_len - suffix_len, mount_test_suffix) == 0);
+}
+
 NotificationConfig::NotificationConfig()
     : timeout_ms(5000), max_retries(3), retry_delay_ms(1000)
 {
@@ -124,9 +142,10 @@ int HttpNotifier::send_notification(const FileOperationEvent& event)
         auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(function_end_time - function_start_time);
         long total_time_ms = total_duration.count();
         
-        S3FS_PRN_WARN("HTTP notification request failed: Operation=%s File=%s Duration=%ldms Result=%d", 
+        S3FS_PRN_WARN("HTTP notification request failed: Operation=%s File=%s IsDirectory=%d Duration=%ldms Result=%d", 
                       event.operation.c_str(), 
                       event.file_path.c_str(), 
+                      event.is_directory,
                       total_time_ms,
                       -1);
         
@@ -134,9 +153,10 @@ int HttpNotifier::send_notification(const FileOperationEvent& event)
     }
     
     // Log HTTP notification request start
-    S3FS_PRN_INFO("HTTP notification request started: Operation=%s File=%s URL=%s Size=%zu", 
+    S3FS_PRN_INFO("HTTP notification request started: Operation=%s File=%s IsDirectory=%d URL=%s Size=%zu", 
                   event.operation.c_str(), 
                   event.file_path.c_str(), 
+                  event.is_directory,
                   config.webhook_url.c_str(),
                   event.file_size);
     
@@ -218,14 +238,16 @@ int HttpNotifier::send_notification(const FileOperationEvent& event)
     long total_time_ms = total_duration.count();
     
     if (result == 0) {
-        S3FS_PRN_INFO("HTTP notification request completed successfully: Operation=%s File=%s Duration=%ldms", 
+        S3FS_PRN_INFO("HTTP notification request completed successfully: Operation=%s File=%s IsDirectory=%d Duration=%ldms", 
                       event.operation.c_str(), 
                       event.file_path.c_str(), 
+                      event.is_directory,
                       total_time_ms);
     } else {
-        S3FS_PRN_WARN("HTTP notification request failed: Operation=%s File=%s Duration=%ldms Result=%d", 
+        S3FS_PRN_WARN("HTTP notification request failed: Operation=%s File=%s IsDirectory=%d Duration=%ldms Result=%d", 
                       event.operation.c_str(), 
                       event.file_path.c_str(), 
+                      event.is_directory,
                       total_time_ms,
                       result);
     }
@@ -272,6 +294,12 @@ int notify_file_operation_async(const char* file_path, const char* operation, si
         return -1;
     }
     
+    // Skip notification for .mount_test files
+    if (should_skip_notification(file_path)) {
+        S3FS_PRN_DBG("Skipping HTTP notification for .mount_test file: %s", file_path);
+        return 0;  // Return success but skip actual notification
+    }
+    
     FileOperationEvent event(file_path, operation, file_size, is_directory);
     HttpNotifier::instance().notify_async(event);
     return 0;
@@ -281,6 +309,12 @@ int notify_file_operation_sync(const char* file_path, const char* operation, siz
 {
     if (!file_path || !operation) {
         return -1;
+    }
+    
+    // Skip notification for .mount_test files
+    if (should_skip_notification(file_path)) {
+        S3FS_PRN_DBG("Skipping HTTP notification for .mount_test file: %s", file_path);
+        return 0;  // Return success but skip actual notification
     }
     
     FileOperationEvent event(file_path, operation, file_size, is_directory);
