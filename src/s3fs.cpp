@@ -1131,7 +1131,7 @@ static int s3fs_create(const char* _path, mode_t mode, struct fuse_file_info* fi
 
     // Send file creation notification
     if(is_http_notify){
-        int notify_result = notify_file_operation_sync(path, FileOperation::CREATE, 0);
+        int notify_result = notify_file_operation_sync(path, FileOperation::CREATE, 0, 0);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send file creation notification for %s, but file operation succeeded", path);
         }
@@ -1221,7 +1221,7 @@ static int s3fs_mkdir(const char* _path, mode_t mode)
 
     // Send directory creation notification
     if(0 == result && is_http_notify){
-        int notify_result = notify_file_operation_async(path, FileOperation::CREATE, 0);
+        int notify_result = notify_file_operation_async(path, FileOperation::CREATE, 0, 1);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send directory creation notification for %s, but file operation succeeded", path);
         }
@@ -1259,7 +1259,7 @@ static int s3fs_unlink(const char* _path)
 
     // Send file deletion notification
     if(0 == result && is_http_notify){
-        int notify_result = notify_file_operation_async(path, FileOperation::DELETE, 0);
+        int notify_result = notify_file_operation_async(path, FileOperation::DELETE, 0, 0);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send file deletion notification for %s, but file operation succeeded", path);
         }
@@ -1350,7 +1350,7 @@ static int s3fs_rmdir(const char* _path)
 
     // Send directory deletion notification
     if(0 == result && is_http_notify){
-        int notify_result = notify_file_operation_async(path, FileOperation::DELETE, 0);
+        int notify_result = notify_file_operation_async(path, FileOperation::DELETE, 0, 1);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send directory deletion notification for %s, but file operation succeeded", path);
         }
@@ -1770,7 +1770,7 @@ static int rename_directory(const char* from, const char* to)
             // Send directory creation notification for renamed subdirectories
             // Note: Skip notification for the top-level directory as it will be handled in s3fs_rename
             if(is_http_notify && strfrom != mn_cur->old_path){
-                int notify_result = notify_file_operation_async(mn_cur->new_path.c_str(), FileOperation::CREATE, 0);
+                int notify_result = notify_file_operation_async(mn_cur->new_path.c_str(), FileOperation::CREATE, 0, 1);
                 if(notify_result != 0){
                     S3FS_PRN_WARN("Failed to send directory creation notification for renamed subdirectory %s, but directory operation succeeded", mn_cur->new_path.c_str());
                 }
@@ -1799,7 +1799,7 @@ static int rename_directory(const char* from, const char* to)
                 if(0 == get_object_attribute(mn_cur->new_path.c_str(), &stbuf, nullptr)){
                     file_size = (size_t)stbuf.st_size;
                 }
-                int notify_result = notify_file_operation_async(mn_cur->new_path.c_str(), FileOperation::CREATE, file_size);
+                int notify_result = notify_file_operation_async(mn_cur->new_path.c_str(), FileOperation::CREATE, file_size, 0);
                 if(notify_result != 0){
                     S3FS_PRN_WARN("Failed to send file creation notification for renamed file %s, but file operation succeeded", mn_cur->new_path.c_str());
                 }
@@ -1878,7 +1878,8 @@ static int s3fs_rename(const char* _from, const char* _to)
     // Send file creation notification for rename operation
     if(0 == result && is_http_notify){
         size_t file_size = S_ISDIR(buf.st_mode) ? 0 : (size_t)buf.st_size;
-        int notify_result = notify_file_operation_async(to, FileOperation::CREATE, file_size);
+        int is_directory = S_ISDIR(buf.st_mode) ? 1 : 0;
+        int notify_result = notify_file_operation_async(to, FileOperation::CREATE, file_size, is_directory);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send file creation notification for renamed file %s, but file operation succeeded", to);
         }
@@ -2965,7 +2966,7 @@ static int s3fs_write(const char* _path, const char* buf, size_t size, off_t off
         if(0 == get_object_attribute(path, &stbuf)){
             file_size = stbuf.st_size;
         }
-        int notify_result = notify_file_operation_async(path, FileOperation::UPDATE, file_size);
+        int notify_result = notify_file_operation_async(path, FileOperation::UPDATE, file_size, 0);
         if(notify_result != 0){
             S3FS_PRN_WARN("Failed to send file update notification for %s from write, but write succeeded", path);
         }

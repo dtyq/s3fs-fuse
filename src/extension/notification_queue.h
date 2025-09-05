@@ -12,8 +12,9 @@ struct FileOperationEvent {
     std::string operation;
     size_t file_size;
     time_t timestamp;
+    int is_directory;  // 0 for file, 1 for directory
     
-    FileOperationEvent(const char* path, const char* op, size_t size);
+    FileOperationEvent(const char* path, const char* op, size_t size, int is_dir = 0);
     std::string to_json() const;
 };
 

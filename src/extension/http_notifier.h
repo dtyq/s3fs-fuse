@@ -53,8 +53,8 @@ extern "C" {
 #endif
 
 bool init_http_notifications(const char* webhook_url, int timeout_ms = 5000);
-int notify_file_operation_async(const char* file_path, const char* operation, size_t file_size);
-int notify_file_operation_sync(const char* file_path, const char* operation, size_t file_size);
+int notify_file_operation_async(const char* file_path, const char* operation, size_t file_size, int is_directory = 0);
+int notify_file_operation_sync(const char* file_path, const char* operation, size_t file_size, int is_directory = 0);
 void cleanup_http_notifications();
 
 #ifdef __cplusplus

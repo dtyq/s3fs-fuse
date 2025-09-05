@@ -4,8 +4,8 @@
 #include <iomanip>
 #include <sstream>
 
-FileOperationEvent::FileOperationEvent(const char* path, const char* op, size_t size)
-    : operation(op ? op : ""), file_size(size)
+FileOperationEvent::FileOperationEvent(const char* path, const char* op, size_t size, int is_dir)
+    : operation(op ? op : ""), file_size(size), is_directory(is_dir)
 {
     // Remove leading slash from file_path to make it relative to mount point
     if (path && path[0] == '/' && path[1] != '\0') {
@@ -28,7 +28,8 @@ std::string FileOperationEvent::to_json() const
          << "\"timestamp\":" << timestamp << ","
          << "\"operation\":\"" << operation << "\","
          << "\"file_path\":\"" << file_path << "\","
-         << "\"file_size\":" << file_size
+         << "\"file_size\":" << file_size << ","
+         << "\"is_directory\":" << is_directory
          << "}";
     return json.str();
 }
