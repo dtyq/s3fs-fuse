@@ -23,15 +23,15 @@ FileOperationEvent::FileOperationEvent(const char* path, const char* op, size_t 
 
 std::string FileOperationEvent::to_json() const
 {
-    std::stringstream json;
-    json << "{"
-         << "\"timestamp\":" << timestamp << ","
-         << "\"operation\":\"" << operation << "\","
-         << "\"file_path\":\"" << file_path << "\","
-         << "\"file_size\":" << file_size << ","
-         << "\"is_directory\":" << is_directory
-         << "}";
-    return json.str();
+    // Use nlohmann::json to automatically handle JSON escaping
+    nlohmann::json j;
+    j["timestamp"] = timestamp;
+    j["operation"] = operation;
+    j["file_path"] = file_path;
+    j["file_size"] = file_size;
+    j["is_directory"] = is_directory;
+    
+    return j.dump();
 }
 
 NotificationQueue::NotificationQueue() : shutdown_flag(false)

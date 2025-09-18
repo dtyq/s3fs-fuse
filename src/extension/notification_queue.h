@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <string>
+#include <nlohmann/json.hpp>
 
 struct FileOperationEvent {
     std::string file_path;

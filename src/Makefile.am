@@ -19,7 +19,7 @@
 ######################################################################
 bin_PROGRAMS=s3fs
 
-AM_CPPFLAGS = $(DEPS_CFLAGS)
+AM_CPPFLAGS = $(DEPS_CFLAGS) -I$(top_srcdir)/src/third_party
 if USE_GNUTLS_NETTLE
     AM_CPPFLAGS += -DUSE_GNUTLS_NETTLE
 endif
