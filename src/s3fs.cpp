@@ -1815,6 +1815,14 @@ static int rename_directory(const char* from, const char* to)
                     S3FS_PRN_ERR("s3fs_rmdir returned an error(%d)", result);
                     return result;
                 }
+                
+                // Send directory deletion notification
+                if(is_http_notify){
+                    int notify_result = notify_file_operation_async(mn_cur->old_path.c_str(), FileOperation::DELETE, 0, 1);
+                    if(notify_result != 0){
+                        S3FS_PRN_WARN("Failed to send directory deletion notification for %s, but directory operation succeeded", mn_cur->old_path.c_str());
+                    }
+                }
             }else{
                 // cache clear.
                 StatCache::getStatCacheData()->DelStat(mn_cur->old_path);

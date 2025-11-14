@@ -1,0 +1,56 @@
+services:
+  # MinIO 服务 - S3 兼容的对象存储
+  minio:
+    image: minio/minio:latest
+    container_name: s3fs-minio
+    ports:
+      - "9000:9000"     # MinIO API 端口
+      - "9001:9001"     # MinIO Console Web UI 端口
+    environment:
+      # MinIO 访问凭据
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      # 控制台地址
+      MINIO_CONSOLE_ADDRESS: ":9001"
+      # 服务器地址
+      MINIO_SERVER_URL: "http://localhost:9000"
+    volumes:
+      # 数据持久化存储
+      - minio_data:/data
+      # 配置目录
+      - minio_config:/root/.minio
+    command: server /data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - s3fs-test
+    restart: unless-stopped
+
+  # MinIO 客户端 - 用于初始化存储桶
+  minio-client:
+    image: minio/mc:latest
+    container_name: s3fs-mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_minio: "http://minioadmin:minioadmin@minio:9000"
+    volumes:
+      - ./minio-init.sh:/minio-init.sh:ro
+    entrypoint: /bin/sh
+    command: -c "/minio-init.sh"
+    networks:
+      - s3fs-test
+    restart: "no"
+
+volumes:
+  minio_data:
+    driver: local
+  minio_config:
+    driver: local
+
+networks:
+  s3fs-test:
