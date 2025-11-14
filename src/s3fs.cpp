@@ -1778,6 +1778,8 @@ static int rename_directory(const char* from, const char* to)
         }
     }
 
+    S3FS_PRN_INFO("1 Send directory deletion notification for normdir");
+
     // iterate over the list - copy the files with rename_object
     // does a safe copy - copies first and then deletes old
     for(auto mn_cur = mvnodes.cbegin(); mn_cur != mvnodes.cend(); ++mn_cur){
@@ -1806,6 +1808,8 @@ static int rename_directory(const char* from, const char* to)
             }
         }
     }
+
+    S3FS_PRN_INFO("2 Send directory deletion notification for normdir");
 
     // Iterate over old the directories, bottoms up and remove
     for(auto mn_cur = mvnodes.rbegin(); mn_cur != mvnodes.rend(); ++mn_cur){
