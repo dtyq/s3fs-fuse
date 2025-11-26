@@ -5539,6 +5539,15 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
             }
             return 0;
         }
+        else if(is_prefix(arg, "http_notify_exclude_path=")){
+            const char* paths_str = strchr(arg, '=') + sizeof(char);
+            if(!paths_str || *paths_str == '\0'){
+                S3FS_PRN_EXIT("option http_notify_exclude_path has empty value.");
+                return -1;
+            }
+            set_http_notification_exclude_paths(paths_str);
+            return 0;
+        }
         // [NOTE]
         // following option will be discarding, because these are not for fuse.
         // (Referenced sshfs.c)

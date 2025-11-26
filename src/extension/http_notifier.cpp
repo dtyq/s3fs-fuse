@@ -4,24 +4,6 @@
 #include <thread>
 #include <cstring>
 
-// Check if file path ends with .mount_test suffix
-static bool should_skip_notification(const char* file_path) {
-    if (!file_path || strlen(file_path) == 0) {
-        return false;
-    }
-    
-    const char* mount_test_suffix = ".mount_test";
-    size_t path_len = strlen(file_path);
-    size_t suffix_len = strlen(mount_test_suffix);
-    
-    if (path_len < suffix_len) {
-        return false;
-    }
-    
-    // Check if path ends with .mount_test (case sensitive)
-    return (strcmp(file_path + path_len - suffix_len, mount_test_suffix) == 0);
-}
-
 NotificationConfig::NotificationConfig()
     : timeout_ms(5000), max_retries(3), retry_delay_ms(1000)
 {
@@ -30,6 +12,47 @@ NotificationConfig::NotificationConfig()
 bool NotificationConfig::is_valid() const
 {
     return !webhook_url.empty() && timeout_ms > 0 && max_retries >= 0;
+}
+
+void NotificationConfig::parse_exclude_paths(const char* paths_str)
+{
+    if (!paths_str || *paths_str == '\0') {
+        return;
+    }
+    
+    exclude_paths.clear();
+    std::string paths(paths_str);
+    size_t start = 0;
+    size_t end = 0;
+    
+    // Split by colon
+    while (end != std::string::npos) {
+        end = paths.find(':', start);
+        std::string path = paths.substr(start, (end == std::string::npos) ? std::string::npos : end - start);
+        
+        // Skip empty paths
+        if (path.empty()) {
+            start = end + 1;
+            continue;
+        }
+        
+        // Normalize path
+        // Ensure path starts with /
+        if (path[0] != '/') {
+            path = "/" + path;
+        }
+        
+        // Remove trailing / (except for root "/")
+        if (path.length() > 1 && path.back() == '/') {
+            path.pop_back();
+        }
+        
+        // Add to exclude list
+        exclude_paths.push_back(path);
+        S3FS_PRN_INFO("Added notification exclude path: %s", path.c_str());
+        
+        start = end + 1;
+    }
 }
 
 HttpNotifier::HttpNotifier() : initialized(false)
@@ -96,6 +119,43 @@ void HttpNotifier::shutdown()
     }
     
     S3FS_PRN_INFO("HTTP notification shutdown");
+}
+
+void HttpNotifier::set_exclude_paths(const char* paths_str)
+{
+    config.parse_exclude_paths(paths_str);
+}
+
+bool HttpNotifier::should_exclude_notification(const char* file_path) const
+{
+    if (!file_path || strlen(file_path) == 0) {
+        return false;
+    }
+    
+    // Check against configured exclude paths
+    if (config.exclude_paths.empty()) {
+        return false;
+    }
+    
+    std::string check_path(file_path);
+    
+    for (const auto& exclude_path : config.exclude_paths) {
+        // Exact match
+        if (check_path == exclude_path) {
+            return true;
+        }
+        
+        // Prefix match: ensure it's a directory boundary
+        // e.g., exclude_path="/tmp" should match "/tmp/file" but not "/tmpfile"
+        size_t exclude_len = exclude_path.length();
+        if (check_path.length() > exclude_len &&
+            check_path.compare(0, exclude_len, exclude_path) == 0 &&
+            check_path[exclude_len] == '/') {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 HttpNotifier& HttpNotifier::instance()
@@ -294,10 +354,10 @@ int notify_file_operation_async(const char* file_path, const char* operation, si
         return -1;
     }
     
-    // Skip notification for .mount_test files
-    if (should_skip_notification(file_path)) {
-        S3FS_PRN_DBG("Skipping HTTP notification for .mount_test file: %s", file_path);
-        return 0;  // Return success but skip actual notification
+    // Skip notification for excluded paths
+    if (HttpNotifier::instance().should_exclude_notification(file_path)) {
+        S3FS_PRN_DBG("Skipping HTTP notification for excluded path: %s", file_path);
+        return 0;
     }
     
     FileOperationEvent event(file_path, operation, file_size, is_directory);
@@ -311,14 +371,19 @@ int notify_file_operation_sync(const char* file_path, const char* operation, siz
         return -1;
     }
     
-    // Skip notification for .mount_test files
-    if (should_skip_notification(file_path)) {
-        S3FS_PRN_DBG("Skipping HTTP notification for .mount_test file: %s", file_path);
-        return 0;  // Return success but skip actual notification
+    // Skip notification for excluded paths
+    if (HttpNotifier::instance().should_exclude_notification(file_path)) {
+        S3FS_PRN_DBG("Skipping HTTP notification for excluded path: %s", file_path);
+        return 0;
     }
     
     FileOperationEvent event(file_path, operation, file_size, is_directory);
     return HttpNotifier::instance().notify_sync(event);
+}
+
+void set_http_notification_exclude_paths(const char* paths_str)
+{
+    HttpNotifier::instance().set_exclude_paths(paths_str);
 }
 
 void cleanup_http_notifications()
