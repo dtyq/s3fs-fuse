@@ -14,11 +14,6 @@ services:
       MINIO_CONSOLE_ADDRESS: ":9001"
       # 服务器地址
       MINIO_SERVER_URL: "http://localhost:9000"
-    volumes:
-      # 数据持久化存储
-      - minio_data:/data
-      # 配置目录
-      - minio_config:/root/.minio
     command: server /data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -45,12 +40,6 @@ services:
     networks:
       - s3fs-test
     restart: "no"
-
-volumes:
-  minio_data:
-    driver: local
-  minio_config:
-    driver: local
 
 networks:
   s3fs-test:

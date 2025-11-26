@@ -41,7 +41,6 @@ public:
     void notify_async(const FileOperationEvent& event);
     int notify_sync(const FileOperationEvent& event);
     void shutdown();
-    void set_exclude_paths(const char* paths_str);
     bool should_exclude_notification(const char* file_path) const;
     
     static HttpNotifier& instance();
@@ -57,11 +56,10 @@ namespace FileOperation {
 extern "C" {
 #endif
 
-bool init_http_notifications(const char* webhook_url, int timeout_ms = 5000);
+bool init_http_notifications(const NotificationConfig& config);
 int notify_file_operation_async(const char* file_path, const char* operation, size_t file_size, int is_directory = 0);
 int notify_file_operation_sync(const char* file_path, const char* operation, size_t file_size, int is_directory = 0);
 void cleanup_http_notifications();
-void set_http_notification_exclude_paths(const char* paths_str);
 
 #ifdef __cplusplus
 }

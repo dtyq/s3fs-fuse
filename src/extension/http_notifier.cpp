@@ -78,6 +78,18 @@ bool HttpNotifier::initialize(const NotificationConfig& cfg)
     
     config = cfg;
     
+    // Add default built-in exclude paths
+    config.exclude_paths.push_back("/.mount_test");
+    S3FS_PRN_INFO("Added built-in exclude path: /.mount_test");
+    
+    // Log exclude paths configuration
+    if (!config.exclude_paths.empty()) {
+        S3FS_PRN_INFO("HTTP notification exclude paths configured: %zu path(s)", config.exclude_paths.size());
+        for (const auto& path : config.exclude_paths) {
+            S3FS_PRN_INFO("  - %s", path.c_str());
+        }
+    }
+    
     // Start worker thread
     worker_thread = std::thread(&HttpNotifier::worker_loop, this);
     initialized.store(true);
@@ -119,11 +131,6 @@ void HttpNotifier::shutdown()
     }
     
     S3FS_PRN_INFO("HTTP notification shutdown");
-}
-
-void HttpNotifier::set_exclude_paths(const char* paths_str)
-{
-    config.parse_exclude_paths(paths_str);
 }
 
 bool HttpNotifier::should_exclude_notification(const char* file_path) const
@@ -335,16 +342,8 @@ void HttpNotifier::worker_loop()
     S3FS_PRN_INFO("HTTP notification worker thread stopped");
 }
 
-bool init_http_notifications(const char* webhook_url, int timeout_ms)
+bool init_http_notifications(const NotificationConfig& config)
 {
-    if (!webhook_url || strlen(webhook_url) == 0) {
-        return false;
-    }
-    
-    NotificationConfig config;
-    config.webhook_url = webhook_url;
-    config.timeout_ms = timeout_ms;
-    
     return HttpNotifier::instance().initialize(config);
 }
 
@@ -379,11 +378,6 @@ int notify_file_operation_sync(const char* file_path, const char* operation, siz
     
     FileOperationEvent event(file_path, operation, file_size, is_directory);
     return HttpNotifier::instance().notify_sync(event);
-}
-
-void set_http_notification_exclude_paths(const char* paths_str)
-{
-    HttpNotifier::instance().set_exclude_paths(paths_str);
 }
 
 void cleanup_http_notifications()

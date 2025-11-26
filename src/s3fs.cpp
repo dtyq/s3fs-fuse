@@ -116,9 +116,8 @@ static bool update_parent_dir_stat= false;  // default not updating parent direc
 static fsblkcnt_t bucket_block_count;                       // advertised block count of the bucket
 static unsigned long s3fs_block_size = 16 * 1024 * 1024;    // s3fs block size is 16MB
 
-// HTTP notification configuration variables
-static std::string http_notify_url;        // HTTP notification URL
-static int http_notify_timeout    = 5000;  // Notification timeout (milliseconds)
+// HTTP notification configuration
+static NotificationConfig http_notify_config;
 static bool is_http_notify        = false; // Whether to enable HTTP notifications
 
 //-------------------------------------------------------------------
@@ -4258,10 +4257,10 @@ static void* s3fs_init(struct fuse_conn_info* conn)
 
     // Initialize HTTP notifications
     if(is_http_notify){
-        if(!init_http_notifications(http_notify_url.c_str(), http_notify_timeout)){
+        if(!init_http_notifications(http_notify_config)){
             S3FS_PRN_ERR("Failed to initialize HTTP notifications, but continue...");
         }else{
-            S3FS_PRN_INFO("HTTP notifications initialized: %s", http_notify_url.c_str());
+            S3FS_PRN_INFO("HTTP notifications initialized: %s", http_notify_config.webhook_url.c_str());
         }
     }
 
@@ -5523,8 +5522,8 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
         }
         // HTTP notification related options
         else if(is_prefix(arg, "http_notify_url=")){
-            http_notify_url = strchr(arg, '=') + sizeof(char);
-            if(http_notify_url.empty()){
+            http_notify_config.webhook_url = strchr(arg, '=') + sizeof(char);
+            if(http_notify_config.webhook_url.empty()){
                 S3FS_PRN_EXIT("option http_notify_url has empty value.");
                 return -1;
             }
@@ -5532,8 +5531,8 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
             return 0;
         }
         else if(is_prefix(arg, "http_notify_timeout=")){
-            http_notify_timeout = cvt_strtoofft(strchr(arg, '=') + sizeof(char), /*base=*/ 10);
-            if(http_notify_timeout <= 0){
+            http_notify_config.timeout_ms = cvt_strtoofft(strchr(arg, '=') + sizeof(char), /*base=*/ 10);
+            if(http_notify_config.timeout_ms <= 0){
                 S3FS_PRN_EXIT("option http_notify_timeout must be greater than 0.");
                 return -1;
             }
@@ -5545,7 +5544,7 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
                 S3FS_PRN_EXIT("option http_notify_exclude_path has empty value.");
                 return -1;
             }
-            set_http_notification_exclude_paths(paths_str);
+            http_notify_config.parse_exclude_paths(paths_str);
             return 0;
         }
         // [NOTE]
