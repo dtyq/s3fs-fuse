@@ -355,7 +355,7 @@ int notify_file_operation_async(const char* file_path, const char* operation, si
     
     // Skip notification for excluded paths
     if (HttpNotifier::instance().should_exclude_notification(file_path)) {
-        S3FS_PRN_DBG("Skipping HTTP notification for excluded path: %s", file_path);
+        S3FS_PRN_INFO("Skipping HTTP notification for excluded path: %s", file_path);
         return 0;
     }
     
@@ -372,7 +372,7 @@ int notify_file_operation_sync(const char* file_path, const char* operation, siz
     
     // Skip notification for excluded paths
     if (HttpNotifier::instance().should_exclude_notification(file_path)) {
-        S3FS_PRN_DBG("Skipping HTTP notification for excluded path: %s", file_path);
+        S3FS_PRN_INFO("Skipping HTTP notification for excluded path: %s", file_path);
         return 0;
     }
     
