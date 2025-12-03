@@ -58,7 +58,8 @@ s3fs_SOURCES = \
     syncfiller.cpp \
     common_auth.cpp \
     extension/http_notifier.cpp \
-    extension/notification_queue.cpp
+    extension/notification_queue.cpp \
+    extension/local_symlink.cpp
 if USE_SSL_OPENSSL
     s3fs_SOURCES += openssl_auth.cpp
 endif

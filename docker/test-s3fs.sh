@@ -58,6 +58,7 @@ mount_s3fs() {
         -o stat_cache_expire=0 \
         -o http_notify_url=http://127.0.0.1:8002/api/v1/files/notifications \
         -o http_notify_exclude_path=.asr_recordings:.asr_states \
+        -o local_symlink_path=node_modules:vendor \
         -f >> "$LOG_FILE" 2>&1
     
     echo -e "${GREEN}✓ s3fs 已挂载到 $MOUNT_POINT${NC}"

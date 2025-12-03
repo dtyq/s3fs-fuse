@@ -59,6 +59,7 @@
 #include "mpu_util.h"
 #include "threadpoolman.h"
 #include "extension/http_notifier.h"
+#include "extension/local_symlink.h"
 
 //-------------------------------------------------------------------
 // Symbols
@@ -120,6 +121,10 @@ static unsigned long s3fs_block_size = 16 * 1024 * 1024;    // s3fs block size i
 static NotificationConfig http_notify_config;
 static bool is_http_notify        = false; // Whether to enable HTTP notifications
 
+// Local symlink configuration
+static LocalSymlinkConfig local_symlink_config;
+static bool is_local_symlink = false;  // Whether local symlink feature is enabled
+
 //-------------------------------------------------------------------
 // Static functions : prototype
 //-------------------------------------------------------------------
@@ -137,6 +142,7 @@ static int directory_empty(const char* path);
 static int rename_large_object(const char* from, const char* to);
 static int create_file_object(const char* path, mode_t mode, uid_t uid, gid_t gid);
 static int create_directory_object(const char* path, mode_t mode, const struct timespec& ts_atime, const struct timespec& ts_mtime, const struct timespec& ts_ctime, uid_t uid, gid_t gid, const char* pxattrvalue);
+static int create_symlink_internal(const char* target, const char* linkpath, uid_t uid, gid_t gid, std::string& out_target);
 static int rename_object(const char* from, const char* to, bool update_ctime);
 static int rename_object_nocopy(const char* from, const char* to, bool update_ctime);
 static int clone_directory_object(const char* from, const char* to, bool update_ctime, const char* pxattrvalue);
@@ -1196,24 +1202,56 @@ static int s3fs_mkdir(const char* _path, mode_t mode)
         return result;
     }
 
-    std::string xattrvalue;
-    const char* pxattrvalue;
-    if(get_parent_meta_xattr_value(path, xattrvalue)){
-        pxattrvalue = xattrvalue.c_str();
+    // Check if this directory should be symlinked to local filesystem
+    if(is_local_symlink && LocalSymlinkManager::instance().should_create_local_symlink(path)){
+        // Create symlink to local directory instead of S3 directory
+        S3FS_PRN_INFO("Creating local symlink for directory: %s", path);
+
+        // Prepare local directory
+        std::string local_target;
+        result = LocalSymlinkManager::instance().prepare_local_directory(path, mode, pcxt->uid, pcxt->gid, local_target);
+        if(0 != result){
+            return result;
+        }
+
+        // Create symlink on S3 pointing to local directory
+        std::string out_target;
+        result = create_symlink_internal(local_target.c_str(), path, pcxt->uid, pcxt->gid, out_target);
+        if(0 != result){
+            S3FS_PRN_ERR("failed to create symlink on S3: %s -> %s (result=%d)", path, local_target.c_str(), result);
+            ::rmdir(local_target.c_str());
+            return result;
+        }
+
+        // Add symlink to cache
+        StatCache::getStatCacheData()->DelStat(path);
+        if(!StatCache::getStatCacheData()->AddSymlink(path, out_target)){
+            S3FS_PRN_WARN("failed to add symlink cache for %s", path);
+        }
+
+        S3FS_PRN_INFO("Created symlink: %s -> %s", path, local_target.c_str());
+
     }else{
-        pxattrvalue = nullptr;
+        // Normal S3 directory creation
+        std::string xattrvalue;
+        const char* pxattrvalue;
+        if(get_parent_meta_xattr_value(path, xattrvalue)){
+            pxattrvalue = xattrvalue.c_str();
+        }else{
+            pxattrvalue = nullptr;
+        }
+
+        struct timespec now;
+        s3fs_realtime(now);
+        result = create_directory_object(path, mode, now, now, now, pcxt->uid, pcxt->gid, pxattrvalue);
+
+        StatCache::getStatCacheData()->DelStat(path);
     }
-
-    struct timespec now;
-    s3fs_realtime(now);
-    result = create_directory_object(path, mode, now, now, now, pcxt->uid, pcxt->gid, pxattrvalue);
-
-    StatCache::getStatCacheData()->DelStat(path);
 
     // update parent directory timestamp
     int update_result;
     if(0 != (update_result = update_mctime_parent_directory(path))){
-        S3FS_PRN_ERR("succeed to create the directory(%s), but could not update timestamp of its parent directory(result=%d).", path, update_result);
+        S3FS_PRN_ERR("succeed to create the directory/symlink(%s), but could not update timestamp of its parent directory(result=%d).", path, update_result);
     }
 
     // Send directory creation notification
@@ -1358,6 +1396,59 @@ static int s3fs_rmdir(const char* _path)
     return result;
 }
 
+//-------------------------------------------------------------------
+// Internal helper function: Create symlink directly via S3 API (bypass VFS)
+// This function can be safely called from within other FUSE callbacks
+// without causing deadlock.
+//-------------------------------------------------------------------
+static int create_symlink_internal(const char* target, const char* linkpath, 
+                                   uid_t uid, gid_t gid, std::string& out_target)
+{
+    S3FS_PRN_INFO("[target=%s][linkpath=%s][uid=%u][gid=%u]", target, linkpath, uid, gid);
+
+    std::string strnow = s3fs_str_realtime();
+    headers_t headers;
+    headers["Content-Type"]     = "application/octet-stream";
+    headers["x-amz-meta-mode"]  = std::to_string(S_IFLNK | S_IRWXU | S_IRWXG | S_IRWXO);
+    headers["x-amz-meta-atime"] = strnow;
+    headers["x-amz-meta-ctime"] = strnow;
+    headers["x-amz-meta-mtime"] = strnow;
+    headers["x-amz-meta-uid"]   = std::to_string(uid);
+    headers["x-amz-meta-gid"]   = std::to_string(gid);
+
+    // [NOTE]
+    // Symbolic links do not set xattrs.
+
+    int result = 0;
+    {   // scope for AutoFdEntity
+        AutoFdEntity autoent;
+        FdEntity*    ent;
+        if(nullptr == (ent = autoent.Open(linkpath, &headers, 0, S3FS_OMIT_TS, O_RDWR, true, true, false))){
+            S3FS_PRN_ERR("could not open tmpfile for symlink(errno=%d)", errno);
+            return -errno;
+        }
+        // write target path (without leading/trailing spaces)
+        out_target = trim(target);
+        auto target_size = static_cast<ssize_t>(out_target.length());
+        ssize_t ressize;
+        if(target_size != (ressize = ent->Write(autoent.GetPseudoFd(), out_target.c_str(), 0, target_size))){
+            if(ressize < 0){
+                S3FS_PRN_ERR("could not write symlink tmpfile(errno=%d)", static_cast<int>(ressize));
+                return static_cast<int>(ressize);
+            }else{
+                S3FS_PRN_ERR("could not write symlink tmpfile %zd byte(errno=%d)", ressize, errno);
+                return (0 == errno ? -EIO : -errno);
+            }
+        }
+        // upload to S3
+        if(0 != (result = ent->Flush(autoent.GetPseudoFd(), true))){
+            S3FS_PRN_WARN("could not upload symlink tmpfile(result=%d)", result);
+        }
+    }
+
+    return result;
+}
+
 static int s3fs_symlink(const char* _from, const char* _to)
 {
     WTF8_ENCODE(from)
@@ -1380,49 +1471,15 @@ static int s3fs_symlink(const char* _from, const char* _to)
         return result;
     }
 
-    std::string strnow = s3fs_str_realtime();
-    headers_t   headers;
-    headers["Content-Type"]     = "application/octet-stream"; // Static
-    headers["x-amz-meta-mode"]  = std::to_string(S_IFLNK | S_IRWXU | S_IRWXG | S_IRWXO);
-    headers["x-amz-meta-atime"] = strnow;
-    headers["x-amz-meta-ctime"] = strnow;
-    headers["x-amz-meta-mtime"] = strnow;
-    headers["x-amz-meta-uid"]   = std::to_string(pcxt->uid);
-    headers["x-amz-meta-gid"]   = std::to_string(pcxt->gid);
-
-    // [NOTE]
-    // Symbolic links do not set xattrs.
-
-    // open tmpfile
-    std::string strFrom;
-    {   // scope for AutoFdEntity
-        AutoFdEntity autoent;
-        FdEntity*    ent;
-        if(nullptr == (ent = autoent.Open(to, &headers, 0, S3FS_OMIT_TS, O_RDWR, true, true, false))){
-            S3FS_PRN_ERR("could not open tmpfile(errno=%d)", errno);
-            return -errno;
-        }
-        // write(without space words)
-        strFrom           = trim(from);
-        auto from_size = static_cast<ssize_t>(strFrom.length());
-        ssize_t ressize;
-        if(from_size != (ressize = ent->Write(autoent.GetPseudoFd(), strFrom.c_str(), 0, from_size))){
-            if(ressize < 0){
-                S3FS_PRN_ERR("could not write tmpfile(errno=%d)", static_cast<int>(ressize));
-                return static_cast<int>(ressize);
-            }else{
-                S3FS_PRN_ERR("could not write tmpfile %zd byte(errno=%d)", ressize, errno);
-                return (0 == errno ? -EIO : -errno);
-            }
-        }
-        // upload
-        if(0 != (result = ent->Flush(autoent.GetPseudoFd(), true))){
-            S3FS_PRN_WARN("could not upload tmpfile(result=%d)", result);
-        }
+    // Use internal function to create symlink
+    std::string strTarget;
+    result = create_symlink_internal(from, to, pcxt->uid, pcxt->gid, strTarget);
+    if(0 != result){
+        return result;
     }
 
     StatCache::getStatCacheData()->DelStat(to);
-    if(!StatCache::getStatCacheData()->AddSymlink(to, strFrom)){
+    if(!StatCache::getStatCacheData()->AddSymlink(to, strTarget)){
         S3FS_PRN_ERR("failed to add symbolic link cache for %s", to);
     }
 
@@ -4262,6 +4319,16 @@ static void* s3fs_init(struct fuse_conn_info* conn)
         }
     }
 
+    // Initialize local symlink manager
+    if(is_local_symlink){
+        if(!init_local_symlink(local_symlink_config)){
+            S3FS_PRN_ERR("Failed to initialize local symlink manager, but continue...");
+            is_local_symlink = false;
+        }else{
+            S3FS_PRN_INFO("Local symlink manager initialized: base_path=%s", local_symlink_config.base_path.c_str());
+        }
+    }
+
     return nullptr;
 }
 
@@ -4864,6 +4931,21 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
         }
         else if(is_prefix(arg, "tmpdir=")){
             FdManager::SetTmpDir(strchr(arg, '=') + sizeof(char));
+            return 0;
+        }
+        else if(is_prefix(arg, "local_symlink_path=")){
+            // Parse colon-separated directory names for local symlink
+            // Format: local_symlink_path=node_modules:vendor:build
+            const char* paths_str = strchr(arg, '=') + sizeof(char);
+            local_symlink_config.parse_symlink_paths(paths_str);
+            is_local_symlink = local_symlink_config.is_enabled();
+            return 0;
+        }
+        else if(is_prefix(arg, "local_symlink_base=")){
+            // Set base directory for local symlinks
+            // Format: local_symlink_base=/tmp/s3fs-local-mounts
+            local_symlink_config.base_path = strchr(arg, '=') + sizeof(char);
+            S3FS_PRN_INFO("Local symlink base directory: %s", local_symlink_config.base_path.c_str());
             return 0;
         }
         else if(is_prefix(arg, "use_cache=")){
