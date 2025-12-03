@@ -1092,7 +1092,7 @@ static int s3fs_create(const char* _path, mode_t mode, struct fuse_file_info* fi
 
     std::string strnow = s3fs_str_realtime();
     headers_t   meta;
-    meta["Content-Length"] = "0";
+    meta["Content-Type"]     = S3fsCurl::LookupMimeType(path);
     meta["x-amz-meta-uid"]   = std::to_string(pcxt->uid);
     meta["x-amz-meta-gid"]   = std::to_string(pcxt->gid);
     meta["x-amz-meta-mode"]  = std::to_string(mode);
@@ -1106,15 +1106,13 @@ static int s3fs_create(const char* _path, mode_t mode, struct fuse_file_info* fi
         meta["x-amz-meta-xattr"] = xattrvalue;
     }
 
-    // [NOTE] set no_truncate flag
-    // At this point, the file has not been created(uploaded) and
-    // the data is only present in the Stats cache.
-    // The Stats cache should not be deleted automatically by
-    // timeout. If this stats is deleted, s3fs will try to get it
-    // from the server with a Head request and will get an
-    // unexpected error because the result object does not exist.
-    //
-    if(!StatCache::getStatCacheData()->AddStat(path, meta, false, true)){
+    // Immediately create an empty object on S3
+    if(0 != (result = put_request(SAFESTRPTR(path), meta, -1, true/* ahbe */))){
+        S3FS_PRN_ERR("failed to create empty object on S3 for path(%s), result=%d", path, result);
+        return result;
+    }
+
+    if(!StatCache::getStatCacheData()->AddStat(path, meta, false, false)){
         return -EIO;
     }
 
