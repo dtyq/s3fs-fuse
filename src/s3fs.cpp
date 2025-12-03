@@ -142,7 +142,7 @@ static int directory_empty(const char* path);
 static int rename_large_object(const char* from, const char* to);
 static int create_file_object(const char* path, mode_t mode, uid_t uid, gid_t gid);
 static int create_directory_object(const char* path, mode_t mode, const struct timespec& ts_atime, const struct timespec& ts_mtime, const struct timespec& ts_ctime, uid_t uid, gid_t gid, const char* pxattrvalue);
-static int create_symlink_internal(const char* target, const char* linkpath, uid_t uid, gid_t gid, std::string& out_target);
+static int create_symlink_object(const char* target, const char* linkpath, uid_t uid, gid_t gid, std::string& out_target);
 static int rename_object(const char* from, const char* to, bool update_ctime);
 static int rename_object_nocopy(const char* from, const char* to, bool update_ctime);
 static int clone_directory_object(const char* from, const char* to, bool update_ctime, const char* pxattrvalue);
@@ -1216,7 +1216,7 @@ static int s3fs_mkdir(const char* _path, mode_t mode)
 
         // Create symlink on S3 pointing to local directory
         std::string out_target;
-        result = create_symlink_internal(local_target.c_str(), path, pcxt->uid, pcxt->gid, out_target);
+        result = create_symlink_object(local_target.c_str(), path, pcxt->uid, pcxt->gid, out_target);
         if(0 != result){
             S3FS_PRN_ERR("failed to create symlink on S3: %s -> %s (result=%d)", path, local_target.c_str(), result);
             ::rmdir(local_target.c_str());
@@ -1401,7 +1401,7 @@ static int s3fs_rmdir(const char* _path)
 // This function can be safely called from within other FUSE callbacks
 // without causing deadlock.
 //-------------------------------------------------------------------
-static int create_symlink_internal(const char* target, const char* linkpath, 
+static int create_symlink_object(const char* target, const char* linkpath, 
                                    uid_t uid, gid_t gid, std::string& out_target)
 {
     S3FS_PRN_INFO("[target=%s][linkpath=%s][uid=%u][gid=%u]", target, linkpath, uid, gid);
@@ -1473,7 +1473,7 @@ static int s3fs_symlink(const char* _from, const char* _to)
 
     // Use internal function to create symlink
     std::string strTarget;
-    result = create_symlink_internal(from, to, pcxt->uid, pcxt->gid, strTarget);
+    result = create_symlink_object(from, to, pcxt->uid, pcxt->gid, strTarget);
     if(0 != result){
         return result;
     }
