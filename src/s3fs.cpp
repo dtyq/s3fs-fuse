@@ -3112,10 +3112,11 @@ static int s3fs_flush(const char* _path, struct fuse_file_info* fi)
             }
 
             // Send UPDATE notification after data is successfully uploaded to S3
-            // Only send if file content was actually modified (not just metadata or no-op flush)
+            // Only send if file content was actually modified AND the modified flag was cleared by flush
+            // This prevents duplicate notifications when multiple pseudo_fds access the same file
             // Note: For new files, CREATE notification was already sent during s3fs_create,
             //       but we also send UPDATE notification here after the content is uploaded.
-            if(is_http_notify && was_modified){
+            if(is_http_notify && was_modified && !ent->IsModified()){
                 struct stat stbuf;
                 size_t file_size = 0;
                 if(0 == get_object_attribute(path, &stbuf)){
@@ -3172,8 +3173,9 @@ static int s3fs_fsync(const char* _path, int datasync, struct fuse_file_info* fi
         result = ent->Flush(static_cast<int>(fi->fh), false);
 
         // Send UPDATE notification after data is successfully uploaded to S3
-        // Only send if file content was actually modified (not just metadata or no-op flush)
-        if(0 == result && is_http_notify && was_modified){
+        // Only send if file content was actually modified AND the modified flag was cleared by flush
+        // This prevents duplicate notifications when multiple pseudo_fds access the same file
+        if(0 == result && is_http_notify && was_modified && !ent->IsModified()){
             struct stat stbuf;
             size_t file_size = 0;
             if(0 == get_object_attribute(path, &stbuf)){
