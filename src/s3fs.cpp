@@ -3019,21 +3019,6 @@ static int s3fs_write(const char* _path, const char* buf, size_t size, off_t off
         S3FS_PRN_WARN("failed to write file(%s). result=%zd", path, res);
     }
 
-    // Check if we should send update notification immediately after write
-    bool should_notify = (res > 0 && is_http_notify && !ent->IsDirtyNewFile());
-    
-    if(should_notify){
-        struct stat stbuf;
-        size_t file_size = 0;
-        if(0 == get_object_attribute(path, &stbuf)){
-            file_size = stbuf.st_size;
-        }
-        int notify_result = notify_file_operation_async(path, FileOperation::UPDATE, file_size, 0);
-        if(notify_result != 0){
-            S3FS_PRN_WARN("Failed to send file update notification for %s from write, but write succeeded", path);
-        }
-    }
-
     if(max_dirty_data != -1 && ent->BytesModified() >= max_dirty_data){
         int flushres;
         if(0 != (flushres = ent->RowFlush(static_cast<int>(fi->fh), path, true))){
@@ -3102,6 +3087,8 @@ static int s3fs_flush(const char* _path, struct fuse_file_info* fi)
     FdEntity*    ent;
     if(nullptr != (ent = autoent.GetExistFdEntity(path, static_cast<int>(fi->fh)))){
         bool is_new_file = ent->IsDirtyNewFile();
+        // Check if file content is modified BEFORE flush (flush will clear this flag)
+        bool was_modified = ent->IsModified();
 
         if(!ent->UpdateMtime()){         // clear the flag not to update mtime.
             S3FS_PRN_ERR("could not update mtime file(%s)", path);
@@ -3122,6 +3109,22 @@ static int s3fs_flush(const char* _path, struct fuse_file_info* fi)
             if(0 != (result = ent->UploadPending(static_cast<int>(fi->fh)))){
                 S3FS_PRN_ERR("could not upload pending data(meta, etc) for pseudo_fd(%llu) / path(%s) by result=%d, but continue...", (unsigned long long)(fi->fh), path, result);
                 return result;
+            }
+
+            // Send UPDATE notification after data is successfully uploaded to S3
+            // Only send if file content was actually modified (not just metadata or no-op flush)
+            // Note: For new files, CREATE notification was already sent during s3fs_create,
+            //       but we also send UPDATE notification here after the content is uploaded.
+            if(is_http_notify && was_modified){
+                struct stat stbuf;
+                size_t file_size = 0;
+                if(0 == get_object_attribute(path, &stbuf)){
+                    file_size = stbuf.st_size;
+                }
+                int notify_result = notify_file_operation_async(path, FileOperation::UPDATE, file_size, 0);
+                if(notify_result != 0){
+                    S3FS_PRN_WARN("Failed to send file update notification for %s after flush, but flush succeeded", path);
+                }
             }
         }
         StatCache::getStatCacheData()->DelStat(path);
@@ -3153,6 +3156,8 @@ static int s3fs_fsync(const char* _path, int datasync, struct fuse_file_info* fi
     FdEntity*    ent;
     if(nullptr != (ent = autoent.GetExistFdEntity(path, static_cast<int>(fi->fh)))){
         bool is_new_file = ent->IsDirtyNewFile();
+        // Check if file content is modified BEFORE flush (flush will clear this flag)
+        bool was_modified = ent->IsModified();
 
         if(0 == datasync){
             if(!ent->UpdateMtime()){
@@ -3165,6 +3170,20 @@ static int s3fs_fsync(const char* _path, int datasync, struct fuse_file_info* fi
             }
         }
         result = ent->Flush(static_cast<int>(fi->fh), false);
+
+        // Send UPDATE notification after data is successfully uploaded to S3
+        // Only send if file content was actually modified (not just metadata or no-op flush)
+        if(0 == result && is_http_notify && was_modified){
+            struct stat stbuf;
+            size_t file_size = 0;
+            if(0 == get_object_attribute(path, &stbuf)){
+                file_size = stbuf.st_size;
+            }
+            int notify_result = notify_file_operation_async(path, FileOperation::UPDATE, file_size, 0);
+            if(notify_result != 0){
+                S3FS_PRN_WARN("Failed to send file update notification for %s after fsync, but fsync succeeded", path);
+            }
+        }
 
         if(0 != datasync){
             // [NOTE]

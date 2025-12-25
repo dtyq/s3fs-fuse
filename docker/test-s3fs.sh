@@ -50,7 +50,7 @@ mount_s3fs() {
     
     # 挂载命令
     "$S3FS_BIN" "$BUCKET_NAME" "$MOUNT_POINT" \
-        -o dbglevel=info \
+        -o dbglevel=debug \
         -o passwd_file="$PASSWD_FILE" \
         -o url=http://localhost:9000 \
         -o use_path_request_style \
