@@ -21,13 +21,14 @@
 name: s3fs-fuse CI
 
 on:
-  push:
-  pull_request:
-  #
-  # CRON event is fired on every sunday (UTC).
-  #
-  schedule:
-    - cron: '0 0 * * 0'
+  workflow_dispatch:
+  # push:
+  # pull_request:
+  # #
+  # # CRON event is fired on every sunday (UTC).
+  # #
+  # schedule:
+  #   - cron: '0 0 * * 0'
 
 #
 # Jobs
