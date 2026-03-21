@@ -1,0 +1,100 @@
+name: Build and push container image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    name: Build and push image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare
+        id: prepare
+        shell: python3 -u {0}
+        run: |
+          import os
+          githubOutput = open(os.environ['GITHUB_OUTPUT'], 'w')
+
+          # tags
+          tags = []
+          tags.append('${{ github.sha }}')
+          if '${{ github.ref_type }}' == "branch":
+            tags.append('${{ github.ref_name }}')
+
+          # image names
+          baseImageName = '${{ github.repository }}'
+          if baseImageName.endswith('/s3fs-fuse'):
+            # this is a mod, so add -mod suffix
+            baseImageName = baseImageName + '-mod'
+
+          imageNames = [f'ghcr.io/{baseImageName}']
+
+          if '${{ secrets.AWS_ACCESS_KEY_ID }}' and '${{ secrets.AWS_SECRET_ACCESS_KEY }}':
+            githubOutput.write('loginECR=true\n')
+            imageNames.append(f'public.ecr.aws/{baseImageName}')
+          else:
+            githubOutput.write('loginECR=false\n')
+          
+          if '${{ secrets.DOCKERHUB_USERNAME }}' and '${{ secrets.DOCKERHUB_TOKEN }}':
+            githubOutput.write('loginDockerHub=true\n')
+            imageNames.append(f'${{ secrets.DOCKERHUB_USERNAME }}/{baseImageName}')
+          else:
+            githubOutput.write('loginDockerHub=false\n')
+          
+          githubOutput.write('tags<<EOF\n')
+          for imageName in imageNames:
+            for tag in tags:
+              githubOutput.write(f'{imageName}:{tag}\n')
+          githubOutput.write('EOF\n')
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: steps.prepare.outputs.loginGHCR == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.github_token }}
+
+      - name: Login to ECR
+        if: steps.prepare.outputs.loginECR == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: public.ecr.aws
+          username: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          password: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Docker Hub
+        if: steps.prepare.outputs.loginDockerHub == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          push: true
+          provenance: mode=max
+          build-args: |
+            TZ=UTC
+            UBUNTU_APT_MIRROR=archive.ubuntu.com
+            UBUNTU_SECURITY_APT_MIRROR=security.ubuntu.com
+            UBUNTU_PORTS_APT_MIRROR=ports.ubuntu.com
+          tags: |
+            ${{ steps.prepare.outputs.tags }}
