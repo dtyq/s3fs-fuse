@@ -1,90 +1,95 @@
-# Multi-stage build for s3fs-fuse
-# Stage 1: Build environment
-FROM public.ecr.aws/ubuntu/ubuntu:24.04 AS builder
 
-# Set labels for maintainer info
-LABEL maintainer="s3fs-fuse-builder" \
-      description="s3fs-fuse compilation environment" \
-      version="2.0"
+ARG UBUNTU_VERSION=24.04
+ARG BASE_IMAGE=public.ecr.aws/docker/library/ubuntu:${UBUNTU_VERSION}
+FROM ${BASE_IMAGE} AS builder
 
-# Set non-interactive environment to avoid apt prompts
+ARG TZ=Asia/Shanghai
+
 ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Asia/Shanghai
+ENV TZ=${TZ}
 
-# Set working directory
 WORKDIR /usr/src/s3fs-fuse
 
-# Configure Aliyun Ubuntu mirror for faster package downloads
-RUN sed -i 's@http://.*archive.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources && \
-    sed -i 's@http://.*security.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources && \
-    sed -i 's@http://.*ports.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources
+ARG UBUNTU_VERSION=24.04
+ARG UBUNTU_APT_MIRROR=mirrors.aliyun.com
+ARG UBUNTU_SECURITY_APT_MIRROR=mirrors.aliyun.com
+ARG UBUNTU_PORTS_APT_MIRROR=mirrors.aliyun.com
+RUN --mount=type=cache,id=ubuntu-apt-${UBUNTU_VERSION},target=/var/cache/apt,sharing=locked \
+    # setup apt mirror follow deb-822 format
+    sed -i.bak "s|archive.ubuntu.com|${UBUNTU_APT_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i "s|security.ubuntu.com|${UBUNTU_SECURITY_APT_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i "s|ports.ubuntu.com|${UBUNTU_PORTS_APT_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources && \
+    # remove docker-clean config to keep apt cache
+    mv /etc/apt/apt.conf.d/docker-clean /tmp/docker-clean.bak && \
+    # install build dependencies
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        automake \
+        autotools-dev \
+        libtool \
+        autoconf \
+        git \
+        pkg-config \
+        libfuse-dev \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        ca-certificates \
+        tzdata \
+    && \
+    # set timezone
+    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    echo "${TZ}" > /etc/timezone
 
-# Install build dependencies in single layer for efficiency
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    automake \
-    autotools-dev \
-    libtool \
-    autoconf \
-    git \
-    pkg-config \
-    libfuse-dev \
-    libcurl4-openssl-dev \
-    libssl-dev \
-    libxml2-dev \
-    ca-certificates \
-    tzdata \
-    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-    && echo "Asia/Shanghai" > /etc/timezone \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Copy source code
 COPY . .
 
-# Generate configure script, configure, compile and install
 RUN chmod +x ./autogen.sh && \
     ./autogen.sh && \
     ./configure --prefix=/usr --with-openssl && \
     make -j$(nproc) && \
     make install DESTDIR=/install
 
-# Stage 2: Runtime environment
-FROM public.ecr.aws/ubuntu/ubuntu:24.04 AS runtime
+ARG UBUNTU_VERSION=24.04
+ARG BASE_IMAGE=public.ecr.aws/docker/library/ubuntu:${UBUNTU_VERSION}
+FROM ${BASE_IMAGE}
 
-# Set labels
-LABEL maintainer="s3fs-fuse-runtime" \
-      description="s3fs-fuse - FUSE-based file system backed by Amazon S3" \
-      version="2.0"
+ARG TZ=Asia/Shanghai
+ENV TZ=${TZ}
 
-# Set non-interactive environment
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Asia/Shanghai
+ARG UBUNTU_VERSION=24.04
+ARG UBUNTU_APT_MIRROR=mirrors.aliyun.com
+ARG UBUNTU_SECURITY_APT_MIRROR=mirrors.aliyun.com
+ARG UBUNTU_PORTS_APT_MIRROR=mirrors.aliyun.com
+RUN --mount=type=cache,id=ubuntu-apt-${UBUNTU_VERSION},target=/var/cache/apt,sharing=locked \
+    # setup apt mirror follow deb-822 format
+    sed -i.bak "s|archive.ubuntu.com|${UBUNTU_APT_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i "s|security.ubuntu.com|${UBUNTU_SECURITY_APT_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i "s|ports.ubuntu.com|${UBUNTU_PORTS_APT_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources && \
+    # remove docker-clean config to keep apt cache
+    mv /etc/apt/apt.conf.d/docker-clean /tmp/docker-clean.bak && \
+    # install runtime dependencies
+    export DEBIAN_FRONTEND=noninteractive ; \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libfuse2 \
+        libcurl4 \
+        libssl3 \
+        libxml2 \
+        ca-certificates \
+        tzdata \
+        tini \
+    && \
+    # set timezone
+    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    echo "${TZ}" > /etc/timezone && \
+    # restore mirrors
+    mv /etc/apt/sources.list.d/ubuntu.sources.bak /etc/apt/sources.list.d/ubuntu.sources && \
+    # restore docker-clean config
+    mv /tmp/docker-clean.bak /etc/apt/apt.conf.d/docker-clean
 
-# Configure Aliyun Ubuntu mirror for faster package downloads
-RUN sed -i 's@http://.*archive.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources && \
-    sed -i 's@http://.*security.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources && \
-    sed -i 's@http://.*ports.ubuntu.com@http://mirrors.aliyun.com@g' /etc/apt/sources.list.d/ubuntu.sources
-
-# Install runtime dependencies only
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libfuse2 \
-    libcurl4 \
-    libssl3 \
-    libxml2 \
-    ca-certificates \
-    tzdata \
-    tini \
-    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-    && echo "Asia/Shanghai" > /etc/timezone \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Copy s3fs binary from builder stage
 COPY --from=builder /install/usr/bin/s3fs /usr/bin/s3fs
 
-# Set proper permissions
 RUN chmod +x /usr/bin/s3fs
 
-# Set tini as the init process
 ENTRYPOINT ["/usr/bin/tini", "--"]
